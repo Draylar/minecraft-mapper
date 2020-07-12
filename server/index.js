@@ -28,13 +28,13 @@ const shortFieldRegex = /(field_[1-9])\d{0,}/g;
 app.use(cors());
 app.use(express.json());
 
-updateMappings();
+// updateMappings();
 loadData();
 
-setInterval(() => {
-    updateMappings();
-    loadData();
-}, 1000 * 60 * 60 * 24); // run every ~day
+// setInterval(() => {
+//     updateMappings();
+//     loadData();
+// }, 1000 * 60 * 60 * 24); // run every ~day
 
 /**
  * Returns a list of all available mapping versions.
@@ -69,7 +69,7 @@ app.post('/submit', (request, response) => {
             classMatches.forEach(match => {
                 var replacement = fullClasses.get(match);
 
-                if(replacement !== "undefined") {
+                if (replacement !== "undefined") {
                     data.log = data.log.replace(match, replacement);
                 }
             });
@@ -81,7 +81,7 @@ app.post('/submit', (request, response) => {
             methodMatches.forEach(match => {
                 var replacement = methods.get(match);
 
-                if(replacement !== "undefined") {
+                if (replacement !== "undefined") {
                     data.log = data.log.replace(match, replacement);
                 }
             });
@@ -92,8 +92,8 @@ app.post('/submit', (request, response) => {
         if (shortClassMatches !== null) {
             shortClassMatches.forEach(match => {
                 var replacement = shortClasses.get(match);
-                
-                if(replacement !== "undefined") {
+
+                if (replacement !== "undefined") {
                     data.log = data.log.replace(match, replacement);
                 }
             });
@@ -105,7 +105,7 @@ app.post('/submit', (request, response) => {
             shortFieldMatches.forEach(match => {
                 var replacement = fields.get(match);
 
-                if(replacement !== "undefined") {
+                if (replacement !== "undefined") {
                     data.log = data.log.replace(match, replacement);
                 }
             });
@@ -126,48 +126,80 @@ app.listen(5501, () => {
     console.log("Minecraft Mapper online!");
 })
 
+const CLASS = "c";
+const METHOD = "m";
+const FIELD = "f";
+
 function loadData() {
-    dir.readFiles(
-        "mappings",
-        function (err, content, next) {
-            if (err) throw err;
+    fs.readFile("mappings/mappings.tiny", "utf8", function read(err, data) {
+        if (err) throw err;
 
-            content.split("\n").forEach(element => {
-                var splitLine = element.trim().split(" ");
-                var type = splitLine[0];
+        // iterate over each line in the file by splitting at newline
+        data.split("\n").forEach(element => {
+            var splitLine = element.trim().split("	"); // remove extra spacing at back and front, split at tab character
+            var type = splitLine[0];
 
-                // todo: this does not support inner-classes (they don't start with net/minecraft)
-                if (splitLine.length > 2 && (type == "CLASS" && splitLine[1].includes("net/minecraft/") || type !== "CLASS")) {
-                    splitLine[1] = splitLine[1].replace(/\//g, '.');
-                    splitLine[2] = splitLine[2].replace(/\//g, '.');
+            // parse data based on starting line character
+            if (type == CLASS && splitLine.length == 3) {
+                splitLine[1] = splitLine[1].replace(/\//g, '.');
+                splitLine[2] = splitLine[2].replace(/\//g, '.');
+                parseClass(splitLine[1], splitLine[2]);
+            } else if (type == METHOD && splitLine.length == 4) {
+                parseMethod(splitLine[1], splitLine[2], splitLine[3]);
+            } else if (type == FIELD && splitLine.length == 4) {
+                parseField(splitLine[1], splitLine[2], splitLine[3]);
+            }
 
-                    if (type == "CLASS") {
-                        fullClasses.set(splitLine[1], splitLine[2]);
+        });
 
-                        // get short class name
-                        var shortClassMatch = splitLine[1].match(shortClassRegex);
-                        var splitReplacement = splitLine[2].split(".");
-                        var shortClassReplacement = splitReplacement[splitReplacement.length - 1];
+        console.log("Done");
+    });
+}
 
-                        // ensure there was a match for key
-                        if(shortClassMatch !== null && shortClassMatch.length > 0) {
-                            shortClasses.set(splitLine[1].match(shortClassRegex)[0], shortClassReplacement);
-                        }
-                    } else if (type == "METHOD") {
-                        methods.set(splitLine[1], splitLine[2]);
-                    } else if (type == "FIELD") {
-                        fields.set(splitLine[1], splitLine[2]);
-                    }
-                }
-            });
+/**
+ * Parses and stores class information from the given data.
+ * 
+ * @param {String} unmapped  unmapped form of class [net/minecraft/class_1]
+ * @param {String} mapped    mapped form of class [net/minecraft/entity/MyEntity]
+ */
+function parseClass(unmapped, mapped) {
+    fullClasses.set(unmapped, mapped);
 
-            next();
-        },
-        function (err, files) {
-            if (err) throw err;
-            console.log('Finished reading mapping files.');
-        }
-    )
+    // get short class name
+    var shortClassMatch = unmapped.match(shortClassRegex);
+    var splitReplacement = mapped.split(".");
+    var shortClassReplacement = splitReplacement[splitReplacement.length - 1];
+
+    // ensure there was a match for key
+    if (shortClassMatch !== null && shortClassMatch.length > 0) {
+        shortClasses.set(unmapped.match(shortClassRegex)[0], shortClassReplacement);
+    }
+
+    console.log("Parsed class: ", unmapped, mapped);
+}
+
+/**
+ * Parses and stores method information from the given data.
+ * 
+ * @param {String} params    unmapped method descriptor [(Lnet/minecraft/class_1;)V]
+ * @param {String} unmapped  unmapped method name [method_1]
+ * @param {String} mapped    mapped method name [myMethod]
+ */
+function parseMethod(params, unmapped, mapped) {
+    methods.set(unmapped, mapped);
+    console.log("Parsed method: ", unmapped, mapped);
+}
+
+/**
+ * Parses and stores field information from the given data.
+ * 
+ * @param {String} type      unmapped type as a class descriptor [Lnet/minecraft/class_2941;]
+ * @param {String} unmapped  unmapped field name [field_1]
+ * @param {String} mapped    mapped field name [myField]
+ */
+function parseField(type, unmapped, mapped) {
+    fields.set(unmapped, mapped);
+    console.log("Parsed field: ", unmapped, mapped);
 }
 
 function updateMappings() {
@@ -179,15 +211,16 @@ function updateMappings() {
                 var dir = mappingDirectory + "/" + version.gameVersion;
                 var dirFile = dir + "/info.txt";
 
-                if(!fs.existsSync(dir)) {
+                // check if mappings dir already exists
+                if (!fs.existsSync(dir)) {
                     console.log("Creating directory for ", version.gameVersion);
 
                     // create initial directory
-                    fs.mkdirSync(dir, {recursive: true}, err => {});
+                    fs.mkdirSync(dir, { recursive: true }, err => { });
 
                     // create info file with sha hash
-                    fs.writeFile(dirFile, JSON.stringify(version, null, 2), function(err) {
-                        if(err) throw err;
+                    fs.writeFile(dirFile, JSON.stringify(version, null, 2), function (err) {
+                        if (err) throw err;
                         console.log("Created info file for ", version.gameVersion);
                     })
                 } else {
@@ -197,7 +230,7 @@ function updateMappings() {
             });
         });
 
-    
+
 
     console.log("Mappings pulled from GitHub!");
 }

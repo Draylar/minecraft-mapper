@@ -185,8 +185,11 @@ function updateMappings() {
                     // create initial directory
                     fs.mkdirSync(dir)
 
-                    // download contents
-                    fs.writeFile(dirFile, )
+                    // create info file with sha hash
+                    fs.writeFile(dirFile, JSON.stringify(version), function(err) {
+                        if(err) throw err;
+                        console.log("Created info file for ", version.name);
+                    })
                 } else {
                     // check if contents in directories are up to date
 

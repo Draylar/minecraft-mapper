@@ -6,7 +6,7 @@ const app = express();
 const fetch = require("node-fetch");
 
 // mapping information
-const githubBranchEndpoint = "https://api.github.com/repos/FabricMC/yarn/branches";
+const githubBranchEndpoint = "https://meta.fabricmc.net/v2/versions/yarn";
 const mappingDirectory = "../mappings";
 
 var fullClasses = new Map();
@@ -176,19 +176,19 @@ function updateMappings() {
         .then(response => response.json())
         .then(versions => {
             versions.forEach(version => {
-                var dir = mappingDirectory + "/" + version.name;
+                var dir = mappingDirectory + "/" + version.gameVersion;
                 var dirFile = dir + "/info.txt";
 
                 if(!fs.existsSync(dir)) {
-                    console.log("Creating directory for ", version.name);
+                    console.log("Creating directory for ", version.gameVersion);
 
                     // create initial directory
-                    fs.mkdirSync(dir)
+                    fs.mkdirSync(dir, {recursive: true}, err => {});
 
                     // create info file with sha hash
-                    fs.writeFile(dirFile, JSON.stringify(version), function(err) {
+                    fs.writeFile(dirFile, JSON.stringify(version, null, 2), function(err) {
                         if(err) throw err;
-                        console.log("Created info file for ", version.name);
+                        console.log("Created info file for ", version.gameVersion);
                     })
                 } else {
                     // check if contents in directories are up to date

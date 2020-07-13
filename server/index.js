@@ -3,10 +3,14 @@ const cors = require('cors');
 const fs = require('fs');
 const dir = require('node-dir');
 const app = express();
-const fetch = require("node-fetch");
+const fetch = require('node-fetch');
+const unzipper = require('unzipper');
+const path = require('path');
+const mv = require('mv');
 
 // mapping information
-const githubBranchEndpoint = "https://meta.fabricmc.net/v2/versions/yarn";
+const yarnVersionEndpoint = "https://meta.fabricmc.net/v2/versions/yarn";
+const yarnJarURL = "https://maven.fabricmc.net/net/fabricmc/yarn/";
 const mappingDirectory = "../mappings";
 
 var fullClasses = new Map();
@@ -28,7 +32,7 @@ const shortFieldRegex = /(field_[1-9])\d{0,}/g;
 app.use(cors());
 app.use(express.json());
 
-// updateMappings();
+updateMappings();
 loadData();
 
 // setInterval(() => {
@@ -45,9 +49,12 @@ app.get('/versions', (request, response) => {
     });
 });
 
+/**
+ * Return generic information for the root endpoint.
+ */
 app.get('/', (request, response) => {
     response.json({
-        message: "Welcome to the API!"
+        message: "Welcome to the API! For more information, view https://github.com/Draylar/minecraft-mapper"
     });
 });
 
@@ -124,11 +131,25 @@ app.post('/submit', (request, response) => {
 
 app.listen(5501, () => {
     console.log("Minecraft Mapper online!");
-})
+});
 
 const CLASS = "c";
 const METHOD = "m";
 const FIELD = "f";
+
+function loadNewData() {
+    dir.readFiles(mappingDirectory,
+        function (err, context, next) {
+            if (err) throw err;
+            console.log()
+        },
+        function (err, files) {
+            if (err) throw err;
+
+
+        }
+    );
+}
 
 function loadData() {
     fs.readFile("mappings/mappings.tiny", "utf8", function read(err, data) {
@@ -152,7 +173,7 @@ function loadData() {
 
         });
 
-        console.log("Done");
+        console.log("Finished parsing data.");
     });
 }
 
@@ -175,7 +196,7 @@ function parseClass(unmapped, mapped) {
         shortClasses.set(unmapped.match(shortClassRegex)[0], shortClassReplacement);
     }
 
-    console.log("Parsed class: ", unmapped, mapped);
+    // console.log("Parsed class:", unmapped, mapped);
 }
 
 /**
@@ -187,7 +208,7 @@ function parseClass(unmapped, mapped) {
  */
 function parseMethod(params, unmapped, mapped) {
     methods.set(unmapped, mapped);
-    console.log("Parsed method: ", unmapped, mapped);
+    // console.log("Parsed method:", unmapped, mapped);
 }
 
 /**
@@ -199,21 +220,24 @@ function parseMethod(params, unmapped, mapped) {
  */
 function parseField(type, unmapped, mapped) {
     fields.set(unmapped, mapped);
-    console.log("Parsed field: ", unmapped, mapped);
+    // console.log("Parsed field:", unmapped, mapped);
 }
 
 function updateMappings() {
     // todo: fetch each page (page=xyz) until page doesn't return anything
-    fetch(githubBranchEndpoint)
+    fetch(yarnVersionEndpoint)
         .then(response => response.json())
         .then(versions => {
+            var toDownload = [];
+
+            // update, ignore, or queue download information for each version
             versions.forEach(version => {
                 var dir = mappingDirectory + "/" + version.gameVersion;
                 var dirFile = dir + "/info.txt";
 
                 // check if mappings dir already exists
                 if (!fs.existsSync(dir)) {
-                    console.log("Creating directory for ", version.gameVersion);
+                    console.log("Creating directory for", version.gameVersion);
 
                     // create initial directory
                     fs.mkdirSync(dir, { recursive: true }, err => { });
@@ -221,16 +245,102 @@ function updateMappings() {
                     // create info file with sha hash
                     fs.writeFile(dirFile, JSON.stringify(version, null, 2), function (err) {
                         if (err) throw err;
-                        console.log("Created info file for ", version.gameVersion);
-                    })
+                        console.log("Created info file for", version.gameVersion);
+                    });
+
+                    // download game jar
+                    var yarnVersion = version.gameVersion + version.separator + version.build;
+                    var url = yarnJarURL + yarnVersion + "/" + "yarn-" + yarnVersion + "-v2.jar";
+                    var fileDirectory = path.join(mappingDirectory, version.gameVersion);
+
+                    const downloadInfo = {
+                        url: url,
+                        fileDirectory: fileDirectory,
+                        fileName: version.gameVersion + ".jar",
+                        baseDir: dir
+                    }
+
+                    toDownload.push(downloadInfo);
                 } else {
                     // check if contents in directories are up to date
-
+                    // each yarn file has a build version, check if each is up to date, if not, redownload jar
                 }
             });
+
+            // queue each download up
+            if (toDownload.length !== 0) {
+                console.log("Queuing downloads, size of", toDownload.length)
+                queueDownloads(toDownload);
+            }
         });
+}
 
+function queueDownloads(toDownload) {
+    setTimeout(function () {
+        if (toDownload.length !== 0) {
+            var downloadInfo = toDownload.pop();
+            console.log("Starting download for", JSON.stringify(downloadInfo));
+            downloadJar(downloadInfo);
 
+            // queue next download if needed
+            if (toDownload.length !== 0) {
+                queueDownloads(toDownload);
+            }
+        } else {
+            console.log("Finished downloading all yarn jars.");
+        }
+    }, 1000 * 10);
+}
 
-    console.log("Mappings pulled from GitHub!");
+function downloadJar(downloadInfo) {
+    var url = downloadInfo.url;
+    var fileDirectory = downloadInfo.fileDirectory;
+    var fileName = downloadInfo.fileName;
+    var baseDir = downloadInfo.baseDir;
+
+    var jarFileLocation = path.join(fileDirectory, fileName);
+    var metaInfLocation = path.join(fileDirectory, "META-INF");
+    var mappingsLocation = path.join(fileDirectory, "mappings");
+    var mappingsTinyLocation = path.join(fileDirectory, "mappings/mappings.tiny");
+    var mappingsTinyDestination = path.join(fileDirectory, "mappings.tiny");
+
+    download(url, jarFileLocation, () => {
+        // unzip file
+        fs.createReadStream(jarFileLocation)
+            .pipe(unzipper.Extract({ path: fileDirectory }))
+            .on('close', () => {
+                console.log("Unzipped to", fileDirectory);
+
+                // remove old jar file
+                fs.unlinkSync(jarFileLocation);
+                console.log("Deleted old", jarFileLocation);
+
+                // delete META-INF folder
+                fs.rmdirSync(metaInfLocation, { recursive: true });
+                console.log("Deleted META-INF folder at", metaInfLocation);
+
+                // move mappings file out
+                fs.renameSync(mappingsTinyLocation, mappingsTinyDestination);
+                console.log("Moved mappings.tiny file out to", mappingsTinyDestination);
+
+                // delete mappings folder
+                fs.rmdirSync(mappingsLocation, { recursive: true });
+                console.log("Deleted mappings folder at", mappingsLocation);
+            });
+    });
+}
+
+function download(url, outputFile, callback) {
+    console.log("Writing file:", url, outputFile);
+
+    fetch(url)
+        .then(response => new Promise((resolve, reject) => {
+            const dest = fs.createWriteStream(outputFile);
+            response.body.pipe(dest);
+            dest.on('close', () => {
+                callback();
+                resolve();
+            });
+            dest.on('error', reject);
+        }));
 }

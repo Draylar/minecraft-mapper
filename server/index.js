@@ -90,6 +90,12 @@ app.listen(5501, () => {
     console.log("Minecraft Mapper online!");
 });
 
+/**
+ * Returns whether or not the given log or text is valid for mapping.
+ * A log is valid if it is not empty.
+ * 
+ * @param {string} body 
+ */
 function isValidLog(body) {
     return body.data && body.data.toString().trim() !== '';
 }

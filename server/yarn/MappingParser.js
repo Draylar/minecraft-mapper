@@ -15,6 +15,9 @@ module.exports = {
     loadData
 }
 
+/**
+ * Loads all mapping data from the ../mappings directory.
+ */
 function loadData() {
     for (const [key, value] of Object.entries(mappingManager.mappings)) {
         fs.readFile(path.resolve(mappingDirectory, key, "mappings.tiny"), "utf8", function read(err, data) {
@@ -85,8 +88,6 @@ function parseMethod(version, params, unmapped, mapped) {
     if (mappings !== undefined) {
         mappings.methods.set(unmapped, mapped);
     }
-
-    // console.log("Parsed method:", unmapped, mapped);
 }
 
 /**
@@ -102,6 +103,4 @@ function parseField(version, type, unmapped, mapped) {
     if (mappings !== undefined) {
         mappings.fields.set(unmapped, mapped);
     }
-
-    // console.log("Parsed field:", unmapped, mapped);
 }

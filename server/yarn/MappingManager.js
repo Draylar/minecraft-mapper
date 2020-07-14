@@ -23,6 +23,13 @@ function getMappings(version) {
     return mappings[version];
 }
 
+/**
+ * Maps the given intermediary log or text with the given version's mappings.
+ * If the given version has no mappings for it, undefined is returned.
+ * 
+ * @param {string} log      log or intermediary code to map to yarn
+ * @param {string} version  yarn mapping version
+ */
 function mapLog(log, version) {
     // get version mappings
     var versionMappings = getMappings(version);

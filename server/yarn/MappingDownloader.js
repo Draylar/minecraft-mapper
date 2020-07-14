@@ -15,8 +15,13 @@ module.exports = {
     updateMappings
 };
 
+/**
+ * Attempts to update the mapping folders found in ../mappings.
+ * If the given mappings already exist & are up-to-date, no downloading occurs.
+ * 
+ * @param {function} callback  logic to run after all mappings have been downloaded & updated
+ */
 function updateMappings(callback) {
-    // todo: fetch each page (page=xyz) until page doesn't return anything
     fetch(yarnVersionEndpoint)
         .then(response => response.json())
         .then(versions => {
@@ -36,7 +41,7 @@ function updateMappings(callback) {
                     // check if mappings dir already exists
                     if (!fs.existsSync(versionDir)) {
                         console.log("Creating directory for", version.gameVersion);
-                        populateDirectory(versionDir, versionInfoFile, version, toDownload);
+                        refreshDirectory(versionDir, versionInfoFile, version, toDownload);
                     } else {
                         // check if contents in directories are up to date
                         // each yarn file has a build version, check if each is up to date, if not, redownload jar
@@ -48,7 +53,7 @@ function updateMappings(callback) {
                         // check if cached version and maven version do not match
                         if (latestBuild !== currentBuild) {
                             console.log("Versions don't match, updating", version.gameVersion, currentBuild, latestBuild);
-                            populateDirectory(versionDir, versionInfoFile, version, toDownload);
+                            refreshDirectory(versionDir, versionInfoFile, version, toDownload);
                         }
                     }
                 }
@@ -64,7 +69,17 @@ function updateMappings(callback) {
         });
 }
 
-function populateDirectory(versionDir, versionInfoFile, version, toDownload) {
+/**
+ * Prepares a directory for downloading mappings.
+ * If the directory does not exist, it is created before downloading version content.
+ * An info file (info.txt) is either created or updated inside the directory.
+ * 
+ * @param {String} versionDir        directory folder of version (1.16 -> ../mappings/1.16/)
+ * @param {String} versionInfoFile   location of versions' info.txt file (1.16 -> ../mappings/1.16/info.txt)
+ * @param {String} version           game version
+ * @param {String[]} toDownload      mutable array to add directory information to, used once all directories have been prepared
+ */
+function refreshDirectory(versionDir, versionInfoFile, version, toDownload) {
     fs.mkdirSync(versionDir, { recursive: true }, err => { });
 
     // create info file with sha hash
@@ -82,19 +97,26 @@ function populateDirectory(versionDir, versionInfoFile, version, toDownload) {
     const downloadInfo = {
         url: url,
         fileDirectory: fileDirectory,
-        fileName: version.gameVersion + ".jar",
-        baseDir: versionDir
+        fileName: version.gameVersion + ".jar"
     };
 
     toDownload.push(downloadInfo);
 }
 
+/**
+ * Downloads & extracts mapping jars for each version in the toDownload list.
+ * Each download is separated by a 10 second pause to prevent stressing the Fabric maven.
+ * After finishing, the callback is ran.
+ * 
+ * @param {any[]} toDownload  list of information on versions to download
+ * @param {function} callback    code to run after all downloads have completed
+ */
 function queueDownloads(toDownload, callback) {
     setTimeout(function () {
         if (toDownload.length !== 0) {
             var downloadInfo = toDownload.pop();
             console.log("Starting download for", JSON.stringify(downloadInfo));
-            downloadJar(downloadInfo);
+            downloadMappings(downloadInfo);
 
             // queue next download if needed
             if (toDownload.length !== 0) {
@@ -107,11 +129,16 @@ function queueDownloads(toDownload, callback) {
     }, 1000 * 10);
 }
 
-function downloadJar(downloadInfo) {
+/**
+ * Downloads mappings based on the given information.
+ * The downloaded jar is unzipped, the contents are pulled out, and the original jar/unzipped-folder are deleted.
+ * 
+ * @param {any} downloadInfo 
+ */
+function downloadMappings(downloadInfo) {
     var url = downloadInfo.url;
     var fileDirectory = downloadInfo.fileDirectory;
     var fileName = downloadInfo.fileName;
-    var baseDir = downloadInfo.baseDir;
 
     var jarFileLocation = path.join(fileDirectory, fileName);
     var metaInfLocation = path.join(fileDirectory, "META-INF");
@@ -145,6 +172,13 @@ function downloadJar(downloadInfo) {
     });
 }
 
+/**
+ * Downloads the file at the given URL to the outputFile location, then runs the callback.
+ * 
+ * @param {string} url         URL to download file from
+ * @param {string} outputFile  location to download file to
+ * @param {function} callback  code to run after finishing
+ */
 function download(url, outputFile, callback) {
     console.log("Writing file:", url, outputFile);
 

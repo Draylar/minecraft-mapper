@@ -30,6 +30,7 @@ class MappingData {
 }
 
 var mappings = new Map();
+var versions = undefined;
 
 /**
  * Returns a {MappingData} with information on mappings for the given version.
@@ -57,10 +58,15 @@ updateMappings(() => {
  * Returns a list of all available mapping versions.
  */
 app.get('/versions', (request, response) => {
-    var keys = mappings.keys();
+    if(versions === undefined) {
+        versions = [];
+        for (const [key, value] of Object.entries(mappings)) {
+            versions.push(key);
+        }
+    }
 
     response.json({
-        keys
+        versions
     });
 });
 
@@ -87,14 +93,14 @@ app.post('/submit', (request, response) => {
 
         // get version mappings
         var versionMappings = getMappings(data.version);
-        if (versionMappings !== "undefined" && versionMappings.size > 0) {
+        if (versionMappings !== undefined) {
             // replace full classes (net.minecraft.class_xyz)
             var fullClassMatches = data.log.match(fullClassRegex);
             if (fullClassMatches !== null) {
                 fullClassMatches.forEach(match => {
                     var replacement = versionMappings.fullClasses.get(match);
 
-                    if (replacement !== "undefined") {
+                    if (replacement !== undefined) {
                         data.log = data.log.replace(match, replacement);
                     }
                 });
@@ -106,7 +112,7 @@ app.post('/submit', (request, response) => {
                 methodMatches.forEach(match => {
                     var replacement = versionMappings.methods.get(match);
 
-                    if (replacement !== "undefined") {
+                    if (replacement !== undefined) {
                         data.log = data.log.replace(match, replacement);
                     }
                 });
@@ -118,7 +124,7 @@ app.post('/submit', (request, response) => {
                 classMatches.forEach(match => {
                     var replacement = versionMappings.classes.get(match);
 
-                    if (replacement !== "undefined") {
+                    if (replacement !== undefined) {
                         data.log = data.log.replace(match, replacement);
                     }
                 });
@@ -130,7 +136,7 @@ app.post('/submit', (request, response) => {
                 fieldMatches.forEach(match => {
                     var replacement = versionMappings.fields.get(match);
 
-                    if (replacement !== "undefined") {
+                    if (replacement !== undefined) {
                         data.log = data.log.replace(match, replacement);
                     }
                 });
@@ -162,45 +168,37 @@ const CLASS = "c";
 const METHOD = "m";
 const FIELD = "f";
 
-function loadNewData() {
-    dir.readFiles(mappingDirectory,
-        function (err, context, next) {
-            if (err) throw err;
-            console.log()
-        },
-        function (err, files) {
-            if (err) throw err;
-
-
-        }
-    );
-}
-
 function loadData() {
-    fs.readFile("mappings/mappings.tiny", "utf8", function read(err, data) {
-        if (err) throw err;
+    for (const [key, value] of Object.entries(mappings)) {
+        fs.readFile(path.resolve(mappingDirectory, key, "mappings.tiny"), "utf8", function read(err, data) {
+            if (err) {
+                console.log("If the mappings file isn't found, delete the folder and let it re-download.");
+                throw err;
+                // todo: do this gracefully?
+            } 
 
-        // iterate over each line in the file by splitting at newline
-        data.split("\n").forEach(element => {
-            var splitLine = element.trim().split("	"); // remove extra spacing at back and front, split at tab character
-            var type = splitLine[0];
-            var version = "1.14";
+            // iterate over each line in the file by splitting at newline
+            data.split("\n").forEach(element => {
+                var splitLine = element.trim().split("	"); // remove extra spacing at back and front, split at tab character
+                var type = splitLine[0];
+                var version = key;
 
-            // parse data based on starting line character
-            if (type == CLASS && splitLine.length == 3) {
-                splitLine[1] = splitLine[1].replace(/\//g, '.');
-                splitLine[2] = splitLine[2].replace(/\//g, '.');
-                parseClass(version, splitLine[1], splitLine[2]);
-            } else if (type == METHOD && splitLine.length == 4) {
-                parseMethod(version, splitLine[1], splitLine[2], splitLine[3]);
-            } else if (type == FIELD && splitLine.length == 4) {
-                parseField(version, splitLine[1], splitLine[2], splitLine[3]);
-            }
+                // parse data based on starting line character
+                if (type == CLASS && splitLine.length == 3) {
+                    splitLine[1] = splitLine[1].replace(/\//g, '.');
+                    splitLine[2] = splitLine[2].replace(/\//g, '.');
+                    parseClass(version, splitLine[1], splitLine[2]);
+                } else if (type == METHOD && splitLine.length == 4) {
+                    parseMethod(version, splitLine[1], splitLine[2], splitLine[3]);
+                } else if (type == FIELD && splitLine.length == 4) {
+                    parseField(version, splitLine[1], splitLine[2], splitLine[3]);
+                }
 
+            });
+
+            console.log("Finished parsing data.");
         });
-
-        console.log("Finished parsing data.");
-    });
+    };
 }
 
 /**
@@ -212,7 +210,7 @@ function loadData() {
 function parseClass(version, unmapped, mapped) {
     var mappings = getMappings(version);
 
-    if (mappings !== "undefined") {
+    if (mappings !== undefined) {
         mappings.fullClasses.set(unmapped, mapped);
 
         // get short class name
@@ -237,7 +235,7 @@ function parseClass(version, unmapped, mapped) {
 function parseMethod(version, params, unmapped, mapped) {
     var mappings = getMappings(version);
 
-    if (mappings !== "undefined") {
+    if (mappings !== undefined) {
         mappings.methods.set(unmapped, mapped);
     }
 
@@ -254,7 +252,7 @@ function parseMethod(version, params, unmapped, mapped) {
 function parseField(version, type, unmapped, mapped) {
     var mappings = getMappings(version);
 
-    if (mappings !== "undefined") {
+    if (mappings !== undefined) {
         mappings.fields.set(unmapped, mapped);
     }
 
@@ -271,7 +269,7 @@ function updateMappings(callback) {
             // update, ignore, or queue download information for each version
             var finishedVersions = [];
             versions.forEach(version => {
-                if (!finishedVersions.includes(version.gameVersion)) {
+                if (!finishedVersions.includes(version.gameVersion) && version.gameVersion == "1.16.1") {
                     // add to valid version list
                     mappings[version.gameVersion] = new MappingData(new Map(), new Map(), new Map(), new Map());
                     finishedVersions.push(version.gameVersion);

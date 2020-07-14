@@ -9,7 +9,7 @@ const VERSIONS_URL = "http://localhost:5501/versions";
 fetch(VERSIONS_URL)
     .then(response => response.json())
     .then(data => {
-        var versions = data.mappingVersions;
+        var versions = data.versions;
 
         versions.forEach(version => {
             var element = document.createElement("option");

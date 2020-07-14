@@ -13,27 +13,40 @@ const yarnVersionEndpoint = "https://meta.fabricmc.net/v2/versions/yarn";
 const yarnJarURL = "https://maven.fabricmc.net/net/fabricmc/yarn/";
 const mappingDirectory = "../mappings";
 
-var fullClasses = new Map();
-var shortClasses = new Map();
-var methods = new Map();
-var fields = new Map();
-
-var mappingVersions = [
-    "1.16.1",
-    "1.16"
-];
-
 // w -> d
 const fullClassRegex = /(net.minecraft.class_[1-9])\d{0,}/g;
 const shortMethodRegex = /(method_[1-9])\d{0,}/g;
-const shortClassRegex = /(class_[1-9])\d{0,}/g;
-const shortFieldRegex = /(field_[1-9])\d{0,}/g;
+const classRegex = /(class_[1-9])\d{0,}/g;
+const fieldRegex = /(field_[1-9])\d{0,}/g;
+
+// mapping data information
+class MappingData {
+    constructor(fullClasses, classes, methods, fields) {
+        this.fullClasses = fullClasses;
+        this.classes = classes;
+        this.methods = methods;
+        this.fields = fields;
+    }
+}
+
+var mappings = new Map();
+
+/**
+ * Returns a {MappingData} with information on mappings for the given version.
+ * If no mappings are found, an empty Map is returned.
+ * 
+ * @param {String} version   game version to retrieve mappings for.
+ */
+function getMappings(version) {
+    return mappings[version];
+}
 
 app.use(cors());
 app.use(express.json());
 
-updateMappings();
-loadData();
+updateMappings(() => {
+    loadData();
+});
 
 // setInterval(() => {
 //     updateMappings();
@@ -44,8 +57,10 @@ loadData();
  * Returns a list of all available mapping versions.
  */
 app.get('/versions', (request, response) => {
+    var keys = mappings.keys();
+
     response.json({
-        mappingVersions
+        keys
     });
 });
 
@@ -70,57 +85,67 @@ app.post('/submit', (request, response) => {
             version: request.body.version.toString(),
         };
 
-        // replace full classes (net.minecraft.class_xyz)
-        var classMatches = data.log.match(fullClassRegex);
-        if (classMatches !== null) {
-            classMatches.forEach(match => {
-                var replacement = fullClasses.get(match);
+        // get version mappings
+        var versionMappings = getMappings(data.version);
+        if (versionMappings !== "undefined" && versionMappings.size > 0) {
+            // replace full classes (net.minecraft.class_xyz)
+            var fullClassMatches = data.log.match(fullClassRegex);
+            if (fullClassMatches !== null) {
+                fullClassMatches.forEach(match => {
+                    var replacement = versionMappings.fullClasses.get(match);
 
-                if (replacement !== "undefined") {
-                    data.log = data.log.replace(match, replacement);
-                }
+                    if (replacement !== "undefined") {
+                        data.log = data.log.replace(match, replacement);
+                    }
+                });
+            }
+
+            // replace short methods (method_xyz)
+            var methodMatches = data.log.match(shortMethodRegex);
+            if (methodMatches !== null) {
+                methodMatches.forEach(match => {
+                    var replacement = versionMappings.methods.get(match);
+
+                    if (replacement !== "undefined") {
+                        data.log = data.log.replace(match, replacement);
+                    }
+                });
+            }
+
+            // replace short classes (class_xyz)
+            var classMatches = data.log.match(classRegex);
+            if (classMatches !== null) {
+                classMatches.forEach(match => {
+                    var replacement = versionMappings.classes.get(match);
+
+                    if (replacement !== "undefined") {
+                        data.log = data.log.replace(match, replacement);
+                    }
+                });
+            }
+
+            // replace short fields
+            var fieldMatches = data.log.match(fieldRegex);
+            if (fieldMatches !== null) {
+                fieldMatches.forEach(match => {
+                    var replacement = versionMappings.fields.get(match);
+
+                    if (replacement !== "undefined") {
+                        data.log = data.log.replace(match, replacement);
+                    }
+                });
+            }
+
+            response.json({
+                log: data.log,
+                message: "Success!" // todo: http response code instead of this?
+            });
+        } else {
+            response.json({
+                log: data.log,
+                message: "Failed to find version information for " + data.version
             });
         }
-
-        // replace short methods (method_xyz)
-        var methodMatches = data.log.match(shortMethodRegex);
-        if (methodMatches !== null) {
-            methodMatches.forEach(match => {
-                var replacement = methods.get(match);
-
-                if (replacement !== "undefined") {
-                    data.log = data.log.replace(match, replacement);
-                }
-            });
-        }
-
-        // replace short classes (class_xyz)
-        var shortClassMatches = data.log.match(shortClassRegex);
-        if (shortClassMatches !== null) {
-            shortClassMatches.forEach(match => {
-                var replacement = shortClasses.get(match);
-
-                if (replacement !== "undefined") {
-                    data.log = data.log.replace(match, replacement);
-                }
-            });
-        }
-
-        // replace short fields
-        var shortFieldMatches = data.log.match(shortFieldRegex);
-        if (shortFieldMatches !== null) {
-            shortFieldMatches.forEach(match => {
-                var replacement = fields.get(match);
-
-                if (replacement !== "undefined") {
-                    data.log = data.log.replace(match, replacement);
-                }
-            });
-        }
-
-        response.json({
-            log: data.log
-        });
     } else {
         response.status(422);
         response.json({
@@ -159,16 +184,17 @@ function loadData() {
         data.split("\n").forEach(element => {
             var splitLine = element.trim().split("	"); // remove extra spacing at back and front, split at tab character
             var type = splitLine[0];
+            var version = "1.14";
 
             // parse data based on starting line character
             if (type == CLASS && splitLine.length == 3) {
                 splitLine[1] = splitLine[1].replace(/\//g, '.');
                 splitLine[2] = splitLine[2].replace(/\//g, '.');
-                parseClass(splitLine[1], splitLine[2]);
+                parseClass(version, splitLine[1], splitLine[2]);
             } else if (type == METHOD && splitLine.length == 4) {
-                parseMethod(splitLine[1], splitLine[2], splitLine[3]);
+                parseMethod(version, splitLine[1], splitLine[2], splitLine[3]);
             } else if (type == FIELD && splitLine.length == 4) {
-                parseField(splitLine[1], splitLine[2], splitLine[3]);
+                parseField(version, splitLine[1], splitLine[2], splitLine[3]);
             }
 
         });
@@ -183,20 +209,22 @@ function loadData() {
  * @param {String} unmapped  unmapped form of class [net/minecraft/class_1]
  * @param {String} mapped    mapped form of class [net/minecraft/entity/MyEntity]
  */
-function parseClass(unmapped, mapped) {
-    fullClasses.set(unmapped, mapped);
+function parseClass(version, unmapped, mapped) {
+    var mappings = getMappings(version);
 
-    // get short class name
-    var shortClassMatch = unmapped.match(shortClassRegex);
-    var splitReplacement = mapped.split(".");
-    var shortClassReplacement = splitReplacement[splitReplacement.length - 1];
+    if (mappings !== "undefined") {
+        mappings.fullClasses.set(unmapped, mapped);
 
-    // ensure there was a match for key
-    if (shortClassMatch !== null && shortClassMatch.length > 0) {
-        shortClasses.set(unmapped.match(shortClassRegex)[0], shortClassReplacement);
+        // get short class name
+        var shortClassMatch = unmapped.match(classRegex);
+        var splitReplacement = mapped.split(".");
+        var shortClassReplacement = splitReplacement[splitReplacement.length - 1];
+
+        // ensure there was a match for key
+        if (shortClassMatch !== null && shortClassMatch.length > 0) {
+            mappings.classes.set(unmapped.match(classRegex)[0], shortClassReplacement);
+        }
     }
-
-    // console.log("Parsed class:", unmapped, mapped);
 }
 
 /**
@@ -206,8 +234,13 @@ function parseClass(unmapped, mapped) {
  * @param {String} unmapped  unmapped method name [method_1]
  * @param {String} mapped    mapped method name [myMethod]
  */
-function parseMethod(params, unmapped, mapped) {
-    methods.set(unmapped, mapped);
+function parseMethod(version, params, unmapped, mapped) {
+    var mappings = getMappings(version);
+
+    if (mappings !== "undefined") {
+        mappings.methods.set(unmapped, mapped);
+    }
+
     // console.log("Parsed method:", unmapped, mapped);
 }
 
@@ -218,12 +251,17 @@ function parseMethod(params, unmapped, mapped) {
  * @param {String} unmapped  unmapped field name [field_1]
  * @param {String} mapped    mapped field name [myField]
  */
-function parseField(type, unmapped, mapped) {
-    fields.set(unmapped, mapped);
+function parseField(version, type, unmapped, mapped) {
+    var mappings = getMappings(version);
+
+    if (mappings !== "undefined") {
+        mappings.fields.set(unmapped, mapped);
+    }
+
     // console.log("Parsed field:", unmapped, mapped);
 }
 
-function updateMappings() {
+function updateMappings(callback) {
     // todo: fetch each page (page=xyz) until page doesn't return anything
     fetch(yarnVersionEndpoint)
         .then(response => response.json())
@@ -231,51 +269,73 @@ function updateMappings() {
             var toDownload = [];
 
             // update, ignore, or queue download information for each version
+            var finishedVersions = [];
             versions.forEach(version => {
-                var dir = mappingDirectory + "/" + version.gameVersion;
-                var dirFile = dir + "/info.txt";
+                if (!finishedVersions.includes(version.gameVersion)) {
+                    // add to valid version list
+                    mappings[version.gameVersion] = new MappingData(new Map(), new Map(), new Map(), new Map());
+                    finishedVersions.push(version.gameVersion);
 
-                // check if mappings dir already exists
-                if (!fs.existsSync(dir)) {
-                    console.log("Creating directory for", version.gameVersion);
+                    var versionDir = mappingDirectory + "/" + version.gameVersion;
+                    var versionInfoFile = versionDir + "/info.txt";
 
-                    // create initial directory
-                    fs.mkdirSync(dir, { recursive: true }, err => { });
+                    // check if mappings dir already exists
+                    if (!fs.existsSync(versionDir)) {
+                        console.log("Creating directory for", version.gameVersion);
+                        populateDirectory(versionDir, versionInfoFile, version, toDownload);
+                    } else {
+                        // check if contents in directories are up to date
+                        // each yarn file has a build version, check if each is up to date, if not, redownload jar
+                        var data = fs.readFileSync(versionInfoFile, "utf-8");
 
-                    // create info file with sha hash
-                    fs.writeFile(dirFile, JSON.stringify(version, null, 2), function (err) {
-                        if (err) throw err;
-                        console.log("Created info file for", version.gameVersion);
-                    });
+                        var currentBuild = JSON.parse(data).build;
+                        var latestBuild = version.build;
 
-                    // download game jar
-                    var yarnVersion = version.gameVersion + version.separator + version.build;
-                    var url = yarnJarURL + yarnVersion + "/" + "yarn-" + yarnVersion + "-v2.jar";
-                    var fileDirectory = path.join(mappingDirectory, version.gameVersion);
-
-                    const downloadInfo = {
-                        url: url,
-                        fileDirectory: fileDirectory,
-                        fileName: version.gameVersion + ".jar",
-                        baseDir: dir
+                        // check if cached version and maven version do not match
+                        if (latestBuild !== currentBuild) {
+                            console.log("Versions don't match, updating", version.gameVersion, currentBuild, latestBuild);
+                            populateDirectory(versionDir, versionInfoFile, version, toDownload);
+                        }
                     }
-
-                    toDownload.push(downloadInfo);
-                } else {
-                    // check if contents in directories are up to date
-                    // each yarn file has a build version, check if each is up to date, if not, redownload jar
                 }
             });
 
             // queue each download up
             if (toDownload.length !== 0) {
                 console.log("Queuing downloads, size of", toDownload.length)
-                queueDownloads(toDownload);
+                queueDownloads(toDownload, callback);
+            } else {
+                callback();
             }
         });
 }
 
-function queueDownloads(toDownload) {
+function populateDirectory(versionDir, versionInfoFile, version, toDownload) {
+    fs.mkdirSync(versionDir, { recursive: true }, err => { });
+
+    // create info file with sha hash
+    fs.writeFile(versionInfoFile, JSON.stringify(version, null, 2), function (err) {
+        if (err)
+            throw err;
+        console.log("Created info file for", version.gameVersion);
+    });
+
+    // download game jar
+    var yarnVersion = version.gameVersion + version.separator + version.build;
+    var url = yarnJarURL + yarnVersion + "/" + "yarn-" + yarnVersion + "-v2.jar";
+    var fileDirectory = path.join(mappingDirectory, version.gameVersion);
+
+    const downloadInfo = {
+        url: url,
+        fileDirectory: fileDirectory,
+        fileName: version.gameVersion + ".jar",
+        baseDir: versionDir
+    };
+
+    toDownload.push(downloadInfo);
+}
+
+function queueDownloads(toDownload, callback) {
     setTimeout(function () {
         if (toDownload.length !== 0) {
             var downloadInfo = toDownload.pop();
@@ -288,6 +348,7 @@ function queueDownloads(toDownload) {
             }
         } else {
             console.log("Finished downloading all yarn jars.");
+            callback();
         }
     }, 1000 * 10);
 }

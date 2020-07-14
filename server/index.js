@@ -1,13 +1,18 @@
 const express = require('express');
 const cors = require('cors');
+const rateLimit = require('express-rate-limit');
 const app = express();
 
-const mappingManager = require('./yarn/MappingManager.js');
-const mappingDownloader = require('./yarn/MappingDownloader.js');
-const mappingParser = require('./yarn/MappingParser.js');
+const mappingManager = require('./mapping/MappingManager.js');
+const mappingDownloader = require('./mapping/MappingDownloader.js');
+const mappingParser = require('./mapping/MappingParser.js');
 
 app.use(cors());
 app.use(express.json());
+app.use('/submit/', rateLimit({
+    windowMs: 10 * 1000, // 10 seconds
+    max: 1 // limit each IP to 100 requests per windowMs
+}));
 
 // attempt to update mappings, then load data from files in ../mappings
 mappingDownloader.updateMappings(() => {

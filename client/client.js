@@ -10,7 +10,7 @@ refreshVersions();
 
 submitButton.addEventListener('click', (event) => {
     // if there are *no* versions in the dropdown, ask the server again
-    if(versionDropdown.options.length == 1) {
+    if (versionDropdown.options.length == 1) {
         refreshVersions();
     }
 
@@ -40,7 +40,24 @@ submitButton.addEventListener('click', (event) => {
                 'content-type': 'application/json'
             }
         })
-            .then(response => response.json())
+            .then(response => {
+                console.log(response.status);
+
+                // too many submit requests
+                if (response.status === 429) {
+                    // color notification
+                    resultLabel.style.color = "red";
+                    setTimeout(function () {
+                        resultLabel.style.color = "black";
+                    }, 500);
+
+                    // label
+                    resultLabel.textContent = "Please wait a few seconds before sending another request!";
+                    throw new Error("HTTP status " + response.status);
+                }
+
+                return response.json();
+            })
             .then(data => {
                 // update data
                 textField.value = data.log;

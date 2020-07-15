@@ -1,10 +1,10 @@
 var mappings = new Map();
 var versions = undefined;
 
-const fullClassRegex = /(net.minecraft.class_[1-9])\d{0,}/g;
+const fullClassRegex = /(net.minecraft.class_[0-9$]*)/g; // used for finding full class statements in game code
 const shortMethodRegex = /(method_[1-9])\d{0,}/g;
 const fieldRegex = /(field_[1-9])\d{0,}/g;
-const classRegex = /(class_[1-9])\d{0,}/g;
+const classRegex = /(class_[0-9$]*)/g;
 
 module.exports = {
     mappings,

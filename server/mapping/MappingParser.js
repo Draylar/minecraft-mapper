@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const mappingManager = require('./MappingManager.js');
 
-const classRegex = /(class_[1-9])\d{0,}/g;
+const classRegex = /(class_[0-9$]*)/g;
 
 const CLASS = "c";
 const METHOD = "m";

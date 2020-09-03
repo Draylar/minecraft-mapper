@@ -30,7 +30,7 @@ function updateMappings(callback) {
             // update, ignore, or queue download information for each version
             var finishedVersions = [];
             versions.forEach(version => {
-                if (!finishedVersions.includes(version.gameVersion) && version.gameVersion == "1.16.1") {
+                if (!finishedVersions.includes(version.gameVersion)) {
                     // add to valid version list
                     mappingManager.mappings[version.gameVersion] = new MappingData(new Map(), new Map(), new Map(), new Map());
                     finishedVersions.push(version.gameVersion);
